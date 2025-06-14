@@ -1,0 +1,61 @@
+<?php
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require 'vendor/autoload.php'; // PHPMailer autoload (Composer)
+
+$host = 'localhost';
+$db   = 'email_automation';
+$user = 'root';     // change as needed
+$pass = '';         // change as needed
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4", $user, $pass);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    $stmt = $pdo->query("SELECT * FROM recipients WHERE status = 'pending'");
+
+    $recipients = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($recipients as $recipient) {
+        $mail = new PHPMailer(true);
+
+        try {
+            // SMTP Config
+            $mail->isSMTP();
+            $mail->Host = 'smtp.gmail.com';
+            $mail->SMTPAuth = true;
+            $mail->Username = 'your_email@gmail.com';     // your email
+            $mail->Password = 'your_app_password';        // app password if 2FA
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port = 587;
+
+            // Email Content
+            $mail->setFrom('your_email@gmail.com', 'Your Company Name');
+            $mail->addAddress($recipient['email'], $recipient['name']);
+
+            $mail->isHTML(true);
+            $mail->Subject = 'Hello ' . $recipient['name'] . ', Welcome!';
+            $mail->Body    = "<h2>Hi {$recipient['name']},</h2><p>Thank you for joining us!</p>";
+            $mail->AltBody = "Hi {$recipient['name']},\nThank you for joining us!";
+
+            $mail->send();
+
+            echo "Email sent to {$recipient['email']} ✅\n";
+
+            // Update status to 'sent'
+            $update = $pdo->prepare("UPDATE recipients SET status = 'sent', last_sent = NOW() WHERE id = ?");
+            $update->execute([$recipient['id']]);
+
+        } catch (Exception $e) {
+            echo "Failed to send to {$recipient['email']}: {$mail->ErrorInfo} ❌\n";
+
+            // Update status to 'failed'
+            $update = $pdo->prepare("UPDATE recipients SET status = 'failed' WHERE id = ?");
+            $update->execute([$recipient['id']]);
+        }
+    }
+
+} catch (PDOException $e) {
+    die("Database connection failed: " . $e->getMessage());
+}
